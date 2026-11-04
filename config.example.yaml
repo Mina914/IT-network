@@ -1,0 +1,74 @@
+# NetMon configuration
+# Copy to config.yaml and edit:  cp config.example.yaml config.yaml
+# Secrets: write ${NAME} and set the environment variable NAME (see deploy/netmon.env.example).
+
+web:
+  host: 0.0.0.0
+  port: 8080
+  # Link used in email / Teams messages ("Open dashboard")
+  dashboard_url: "http://10.10.0.50:8080"
+
+db_path: netmon.db
+
+polling:
+  interval_seconds: 30     # full SNMP poll of every switch (syslog gives instant alarms in between)
+  fail_threshold: 3        # failed polls in a row before "switch unreachable"
+
+syslog:
+  enabled: true
+  port: 5514               # switches: logging host <this-server> transport udp port 5514
+
+# SNMPv3 settings used by every switch (can be overridden per device with "snmp:")
+snmp_defaults:
+  user: netmon
+  auth_protocol: SHA       # MD5 | SHA | SHA224 | SHA256 | SHA384 | SHA512
+  auth_key: "${NETMON_SNMP_AUTH}"
+  priv_protocol: AES       # DES | 3DES | AES (=AES128) | AES192 | AES256
+  priv_key: "${NETMON_SNMP_PRIV}"
+  timeout: 2
+  retries: 1
+
+alerts:
+  # uplinks = alarm on switch-to-switch links (learned via CDP), ports whose description
+  #           matches the regex below, and switches that stop answering.
+  # all     = alarm on EVERY port (very noisy: users turn PCs off every evening).
+  alert_on: uplinks
+  critical_description_regex: "(?i)uplink|trunk|core|server|ap-|wlc|firewall|fw"
+  notify_delay_seconds: 15   # link must stay down this long before email/Teams is sent
+  send_recovery: true
+
+  email:
+    enabled: false
+    smtp_host: smtp.office365.com
+    smtp_port: 587
+    starttls: true
+    username: netmon@yourcompany.com
+    password: "${NETMON_SMTP_PASSWORD}"
+    from: netmon@yourcompany.com
+    to:
+      - it-network@yourcompany.com
+
+  teams:
+    enabled: false
+    # Teams channel → ••• → Workflows → "Post to a channel when a webhook request is received"
+    webhook_url: "${NETMON_TEAMS_WEBHOOK}"
+
+# role: core | distribution | access   floor: number shown on the map
+# host: the switch management IP (must be the SOURCE IP of its syslog messages)
+devices:
+  - { name: CORE-SW1, host: 10.10.0.1,  role: core,   floor: 0 }
+  # - { name: CORE-SW2, host: 10.10.0.2,  role: core,   floor: 0 }
+  - { name: F1-SW1,   host: 10.10.1.11, role: access, floor: 1 }
+  - { name: F1-SW2,   host: 10.10.1.12, role: access, floor: 1 }
+  - { name: F2-SW1,   host: 10.10.2.11, role: access, floor: 2 }
+  - { name: F2-SW2,   host: 10.10.2.12, role: access, floor: 2 }
+  - { name: F3-SW1,   host: 10.10.3.11, role: access, floor: 3 }
+  - { name: F3-SW2,   host: 10.10.3.12, role: access, floor: 3 }
+  - { name: F4-SW1,   host: 10.10.4.11, role: access, floor: 4 }
+  - { name: F4-SW2,   host: 10.10.4.12, role: access, floor: 4 }
+  - { name: F5-SW1,   host: 10.10.5.11, role: access, floor: 5 }
+  - { name: F5-SW2,   host: 10.10.5.12, role: access, floor: 5 }
+  # Example of a switch with different SNMPv3 keys:
+  # - name: OLD-SW
+  #   host: 10.10.9.9
+  #   snmp: { user: oldmon, auth_protocol: MD5, priv_protocol: DES }

@@ -1,0 +1,16 @@
+[Unit]
+Description=NetMon network monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=netmon
+WorkingDirectory=/opt/netmon
+EnvironmentFile=/etc/netmon/netmon.env
+ExecStart=/opt/netmon/.venv/bin/python -m netmon -c /opt/netmon/config.yaml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

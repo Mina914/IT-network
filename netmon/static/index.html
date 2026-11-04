@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NetMon</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230b1220'/><circle cx='16' cy='9' r='4' fill='%2334d399'/><circle cx='8' cy='23' r='4' fill='%2334d399'/><circle cx='24' cy='23' r='4' fill='%2334d399'/><path d='M16 9L8 23M16 9l8 14' stroke='%2334d399' stroke-width='2'/></svg>">
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/vendor/vis-network.min.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo">◉</span>
+    <div>
+      <div class="title">NetMon</div>
+      <div class="sub">Building network monitor</div>
+    </div>
+    <span id="demoBadge" class="badge demo" hidden>DEMO</span>
+    <button id="demoFail" class="btn small ghost" hidden title="Break a random uplink for 60 seconds">⚡ Simulate link failure</button>
+  </div>
+  <div class="stats">
+    <div class="stat"><span class="k">Switches</span><span class="v" id="stSw">–</span></div>
+    <div class="stat"><span class="k">Uplinks</span><span class="v" id="stLinks">–</span></div>
+    <div class="stat"><span class="k">Ports up</span><span class="v" id="stPorts">–</span></div>
+    <div class="stat alarm" id="stAlarmBox"><span class="k">Active alarms</span><span class="v" id="stAlarms">0</span></div>
+  </div>
+  <div class="tools">
+    <button id="soundBtn" class="btn ghost" title="Play a sound on new alarms">🔇 Sound off</button>
+    <span class="conn" id="conn"><span class="dot"></span><span id="connText">Connecting…</span></span>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden>
+  <span class="pulse"></span>
+  <span id="bannerText"></span>
+  <button class="btn small light" id="bannerAck">Acknowledge</button>
+</div>
+
+<main class="layout">
+  <section class="card topo-card">
+    <div class="card-head">
+      <h2>Topology</h2>
+      <div class="legend">
+        <span><i class="lg up"></i>Up</span>
+        <span><i class="lg warn"></i>Port alarm</span>
+        <span><i class="lg down"></i>Down</span>
+        <span><i class="lg unk"></i>Unknown</span>
+        <button class="btn small ghost" id="fitBtn">Fit</button>
+      </div>
+    </div>
+    <div id="topo"></div>
+  </section>
+
+  <aside class="card side">
+    <div class="tabs">
+      <button class="tab active" data-tab="alarms">Alarms <span class="count" id="alarmCount">0</span></button>
+      <button class="tab" data-tab="events">Event log</button>
+    </div>
+    <div class="tab-body" id="tab-alarms">
+      <div id="alarmList" class="list"></div>
+    </div>
+    <div class="tab-body" id="tab-events" hidden>
+      <input id="eventFilter" class="input" placeholder="Filter events (switch, port, text)…">
+      <div id="eventList" class="list"></div>
+    </div>
+  </aside>
+
+  <section class="card switches-card">
+    <div class="card-head">
+      <h2>Switches</h2>
+      <input id="swFilter" class="input inline" placeholder="Search switch, port or description…">
+    </div>
+    <div id="floors"></div>
+  </section>
+</main>
+
+<div id="drawer" class="drawer" hidden>
+  <div class="drawer-bg" data-close></div>
+  <div class="drawer-panel" role="dialog" aria-modal="true">
+    <div class="drawer-head">
+      <div>
+        <div class="dh-title"><span id="dStatus" class="sdot"></span><span id="dName"></span></div>
+        <div class="dh-sub" id="dSub"></div>
+      </div>
+      <div class="dh-actions">
+        <button class="btn small ghost" id="dPoll">↻ Poll now</button>
+        <button class="btn small ghost" data-close>✕</button>
+      </div>
+    </div>
+    <div class="dinfo" id="dInfo"></div>
+    <div class="faceplate-wrap"><div id="dFace" class="faceplate"></div></div>
+    <div class="ptools">
+      <input id="pFilter" class="input inline" placeholder="Filter ports…">
+      <div class="seg" id="pSeg">
+        <button data-f="all" class="active">All</button>
+        <button data-f="up">Up</button>
+        <button data-f="down">Down</button>
+        <button data-f="admin">Shutdown</button>
+        <button data-f="uplink">Uplinks</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="ports">
+        <thead><tr>
+          <th>Port</th><th>Description</th><th>Status</th><th>VLAN</th><th>Speed</th>
+          <th class="num">In</th><th class="num">Out</th><th class="num">Errors</th>
+          <th>Neighbor (CDP)</th><th>Last change</th>
+        </tr></thead>
+        <tbody id="pBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="tip" class="tip" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
