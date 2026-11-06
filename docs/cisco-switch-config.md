@@ -6,7 +6,7 @@ Apply this on **every** switch (core and access). Replace:
 |---|---|
 | `10.10.0.50` | IP of the NetMon server |
 | `Vlan99` | your management SVI (the IP you put in `config.yaml`) |
-| `AUTH-KEY` / `PRIV-KEY` | SNMPv3 keys (8+ characters, same as in `netmon.env`) |
+| `AUTH-KEY` / `PRIV-KEY` | SNMPv3 keys (8+ characters). Production values are kept in the secrets database only (see `secrets.md`). |
 
 > Test on one switch first, then roll out. `snmp-server user` lines are **not shown** in
 > `show running-config`; check them with `show snmp user`.
@@ -28,16 +28,16 @@ snmp-server ifindex persist
 snmp ifmib ifalias long
 ```
 
-For stronger crypto use `auth sha-2 256` / `priv aes 256` on the switch and
-`auth_protocol: SHA256` / `priv_protocol: AES256` in `config.yaml`.
+This is **authPriv** (`v3 priv`): every request is authenticated and encrypted, and the
+view is **read-only** (`read` only, no `write` view). NetMon refuses anything weaker.
 
-Test from the NetMon server:
+If your IOS-XE release supports it, use `auth sha-2 256` and `priv aes 256`. Store the
+matching `SHA256` / `AES256` in the `auth_protocol` / `priv_protocol` columns of the
+secrets database.
 
-```bash
-snmpwalk -v3 -l authPriv -u netmon -a SHA -A 'AUTH-KEY' -x AES -X 'PRIV-KEY' 10.10.1.11 1.3.6.1.2.1.31.1.1.1.18
-```
-
-You should see every port's description.
+The production keys are entered on the switches and in the secrets database by the
+people authorised to handle them. Don't paste them into chat, tickets, scripts or this
+repository.
 
 ## 2. Syslog for instant alarms
 

@@ -6,11 +6,32 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=netmon
+Group=netmon
 WorkingDirectory=/opt/netmon
-EnvironmentFile=/etc/netmon/netmon.env
 ExecStart=/opt/netmon/.venv/bin/python -m netmon -c /opt/netmon/config.yaml
-Restart=always
-RestartSec=5
+Restart=on-failure
+RestartSec=10
+
+# Password of the read-only account on the secrets database.
+# systemd hands it to NetMon as $CREDENTIALS_DIRECTORY/netmon-db-password,
+# readable only by this service. Never put it in an environment variable.
+# The source file: owner root, mode 0600, provisioned by the security team.
+LoadCredential=netmon-db-password:/etc/netmon/credentials/db-password
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ReadWritePaths=/opt/netmon
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=no
+SystemCallArchitectures=native
+# No core dumps: they could contain secrets held in memory
+LimitCORE=0
 
 [Install]
 WantedBy=multi-user.target

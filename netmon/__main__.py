@@ -6,6 +6,7 @@ import uvicorn
 
 from .app import create_app
 from .config import Config, load_config
+from .credentials import SecretsError, apply_secrets
 
 
 def main():
@@ -18,15 +19,14 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s: %(message)s")
 
     if args.demo:
+        # simulated switches only: no credentials, no network devices, no alerts sent
         cfg = Config(demo=True, db_path="netmon-demo.db", poll_interval=15)
-        try:
-            real = load_config(args.config)
-            cfg.alerts = real.alerts          # let the demo test your email/Teams settings
-            cfg.dashboard_url = real.dashboard_url
-        except FileNotFoundError:
-            pass
     else:
         cfg = load_config(args.config)
+        try:
+            apply_secrets(cfg)
+        except SecretsError as e:
+            raise SystemExit(f"NetMon not started: {e}")
     if args.port:
         cfg.web_port = args.port
 

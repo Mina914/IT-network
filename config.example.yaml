@@ -1,6 +1,11 @@
-# NetMon configuration
-# Copy to config.yaml and edit:  cp config.example.yaml config.yaml
-# Secrets: write ${NAME} and set the environment variable NAME (see deploy/netmon.env.example).
+# NetMon PRODUCTION configuration
+# Copy to /opt/netmon/config.yaml on the production server and edit.
+#
+# This file contains NO secrets, and NetMon refuses to start if it finds any
+# (auth_key, priv_key, password, webhook_url, ${ENV} values, ...).
+# SNMPv3 keys are read at start-up from the secrets database (see docs/secrets.md).
+
+environment: production
 
 web:
   host: 0.0.0.0
@@ -18,13 +23,28 @@ syslog:
   enabled: true
   port: 5514               # switches: logging host <this-server> transport udp port 5514
 
-# SNMPv3 settings used by every switch (can be overridden per device with "snmp:")
+# Where the SNMPv3 credentials come from (read-only DB account, internal server only).
+# The DB driver is installed on the production server after security review.
+secrets:
+  provider: database
+  driver: psycopg                 # DB-API module: psycopg | pymysql | pyodbc | oracledb ...
+  connect:                        # passed to driver.connect(); NO password here
+    host: 10.10.0.20              # must be an internal address (or listed in allowed_hosts)
+    port: 5432
+    dbname: secrets
+    user: netmon_ro
+    sslmode: verify-full
+  password_file: netmon-db-password   # systemd LoadCredential name (deploy/netmon.service)
+  # password_arg: password            # keyword the driver uses for the password
+  # allowed_hosts: [secrets-db.corp.local]
+  # snmp_query / secrets_query: override the default SELECTs (see docs/secrets.md)
+
+# SNMPv3 is always authPriv (authentication + encryption) and read-only.
+# Allowed: auth SHA / SHA-2, privacy AES. MD5 and DES are refused unless:
+allow_weak_crypto: false
+
+# Transport settings only (credentials come from the secrets database)
 snmp_defaults:
-  user: netmon
-  auth_protocol: SHA       # MD5 | SHA | SHA224 | SHA256 | SHA384 | SHA512
-  auth_key: "${NETMON_SNMP_AUTH}"
-  priv_protocol: AES       # DES | 3DES | AES (=AES128) | AES192 | AES256
-  priv_key: "${NETMON_SNMP_PRIV}"
   timeout: 2
   retries: 1
 
@@ -37,21 +57,22 @@ alerts:
   notify_delay_seconds: 15   # link must stay down this long before email/Teams is sent
   send_recovery: true
 
+  # Email and Teams send monitoring data off this server, so they are OFF by policy.
+  # To enable either, an approved security exception is required:
+  # security_exception: "SEC-2026-0001"
+
   email:
     enabled: false
-    smtp_host: smtp.office365.com
+    smtp_host: smtp.yourcompany.local     # internal relay preferred
     smtp_port: 587
     starttls: true
-    username: netmon@yourcompany.com
-    password: "${NETMON_SMTP_PASSWORD}"
+    username: netmon@yourcompany.com      # password = secret 'smtp_password' in the secrets DB
     from: netmon@yourcompany.com
     to:
       - it-network@yourcompany.com
 
   teams:
-    enabled: false
-    # Teams channel → ••• → Workflows → "Post to a channel when a webhook request is received"
-    webhook_url: "${NETMON_TEAMS_WEBHOOK}"
+    enabled: false                        # URL = secret 'teams_webhook' in the secrets DB
 
 # role: core | distribution | access   floor: number shown on the map
 # host: the switch management IP (must be the SOURCE IP of its syslog messages)
@@ -68,7 +89,5 @@ devices:
   - { name: F4-SW2,   host: 10.10.4.12, role: access, floor: 4 }
   - { name: F5-SW1,   host: 10.10.5.11, role: access, floor: 5 }
   - { name: F5-SW2,   host: 10.10.5.12, role: access, floor: 5 }
-  # Example of a switch with different SNMPv3 keys:
-  # - name: OLD-SW
-  #   host: 10.10.9.9
-  #   snmp: { user: oldmon, auth_protocol: MD5, priv_protocol: DES }
+  # A switch with its own credential: add a row with device_name = OLD-SW in the
+  # secrets database; rows with device_name = '*' are the default for all switches.

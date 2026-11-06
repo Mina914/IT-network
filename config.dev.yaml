@@ -1,0 +1,35 @@
+# NetMon DEVELOPMENT configuration
+#   * uses the built-in MOCK SNMPv3 credentials (netmon.credentials.MockProvider)
+#   * talks only to a local test agent on 127.0.0.1 (docs/dev-snmpd.conf)
+#   * never point this at production switches
+# Run:  python -m netmon -c config.dev.yaml
+
+environment: development
+
+web:
+  host: 127.0.0.1
+  port: 8080
+
+db_path: netmon-dev.db
+
+secrets:
+  provider: mock
+
+polling:
+  interval_seconds: 15
+  fail_threshold: 3
+
+syslog:
+  enabled: true
+  port: 5514
+
+snmp_defaults:
+  port: 16161
+  timeout: 1
+  retries: 0
+
+alerts:
+  alert_on: all
+
+devices:
+  - { name: DEV-SW1, host: 127.0.0.1, role: access, floor: 1 }

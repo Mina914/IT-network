@@ -1,4 +1,9 @@
-"""Email (SMTP) and Microsoft Teams notifications."""
+"""Email (SMTP) and Microsoft Teams notifications.
+
+Both are OFF by default: they send monitoring data off this server, so config.py
+only allows them with an approved alerts.security_exception. The SMTP password and
+the webhook URL are credentials.Secret objects loaded at runtime.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -15,6 +20,15 @@ from .config import AlertsCfg
 log = logging.getLogger("netmon.notify")
 
 
+def _reveal(v) -> str:
+    return v.reveal() if hasattr(v, "reveal") else (v or "")
+
+
+# httpx logs full request URLs at INFO; the Teams URL is a secret.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+
 class Notifier:
     def __init__(self, cfg: AlertsCfg, dashboard_url: str = ""):
         self.cfg = cfg
@@ -29,7 +43,16 @@ class Notifier:
             jobs.append(self._send_teams(title, ctx, recovered))
         for r in await asyncio.gather(*jobs, return_exceptions=True):
             if isinstance(r, Exception):
-                log.error("notification failed: %s", r)
+                log.error("notification failed: %s", self._scrub(r))
+
+    def _scrub(self, err) -> str:
+        """Error text with any secret value replaced by ***."""
+        msg = f"{type(err).__name__}: {err}"
+        for v in (self.cfg.email.password, self.cfg.teams.webhook_url):
+            v = _reveal(v)
+            if v:
+                msg = msg.replace(v, "***")
+        return msg[:300]
 
     async def test(self) -> dict:
         ctx = {"Device": "TEST", "Message": "This is a test notification from NetMon"}
@@ -39,7 +62,7 @@ class Notifier:
                 await asyncio.to_thread(self._send_email, "🧪 NetMon test notification", ctx, False)
                 result["email"] = "sent"
             except Exception as e:
-                result["email"] = f"failed: {e}"
+                result["email"] = f"failed: {self._scrub(e)}"
         else:
             result["email"] = "disabled"
         if self.cfg.teams.enabled:
@@ -47,7 +70,7 @@ class Notifier:
                 await self._send_teams("🧪 NetMon test notification", ctx, False)
                 result["teams"] = "sent"
             except Exception as e:
-                result["teams"] = f"failed: {e}"
+                result["teams"] = f"failed: {self._scrub(e)}"
         else:
             result["teams"] = "disabled"
         return result
@@ -84,7 +107,7 @@ class Notifier:
             if e.starttls and not e.use_ssl:
                 server.starttls(context=ctx_ssl)
             if e.username:
-                server.login(e.username, e.password)
+                server.login(e.username, _reveal(e.password))
             server.send_message(msg)
         log.info("email sent: %s", title)
 
@@ -109,6 +132,7 @@ class Notifier:
         payload = {"type": "message", "attachments": [
             {"contentType": "application/vnd.microsoft.card.adaptive", "contentUrl": None, "content": card}]}
         async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.post(self.cfg.teams.webhook_url, json=payload)
-            r.raise_for_status()
+            r = await client.post(_reveal(self.cfg.teams.webhook_url), json=payload)
+            if r.status_code >= 400:          # don't let httpx put the webhook URL in the log
+                raise RuntimeError(f"Teams webhook returned HTTP {r.status_code}")
         log.info("teams message sent: %s", title)

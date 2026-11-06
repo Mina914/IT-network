@@ -5,8 +5,10 @@ A small, self-hosted monitoring system for Cisco switches:
 - **Topology map**: drawn automatically from CDP. Broken links turn **red and blink**.
 - **Every switch, every port**: description, up/down, VLAN/trunk, speed, live traffic, errors, CDP neighbour, last change.
 - **Front-panel view** of each switch (green = up, red blinking = alarm).
-- **Live alarms**: a red banner, a sound, and a counter in the browser tab, with **email** and **Microsoft Teams** messages and a recovery message when the link comes back.
-- **SNMPv3** (authPriv) polling, plus **syslog** for alarms within about a second.
+- **Live alarms**: a red banner, a sound, and a counter in the browser tab. Optional **email** and **Teams** messages (off by policy, see section 3).
+- **SNMPv3 authPriv, read-only** polling, plus **syslog** for alarms within about a second.
+- **No secrets in config files**: SNMPv3 keys are loaded at runtime from your secrets database on the internal production server (see [docs/secrets.md](docs/secrets.md)).
+- **No data leaves the server by default**: email and Teams exist but are off unless a security exception is approved.
 - Event log, alarm acknowledgement ("acknowledged by Mina"), and alarms saved across restarts.
 
 ![Dashboard](docs/img/dashboard.png)
@@ -26,38 +28,43 @@ python3 -m venv .venv
 Open <http://localhost:8080>. The demo simulates 2 core switches and 5 floors with 2 access
 switches each. Click **⚡ Simulate link failure** to see an alarm, and **🔔 Sound** to hear it.
 
-## 2. Connect your real switches
+## 2. Development (mock credentials only)
+
+`config.dev.yaml` uses the built-in **mock** SNMPv3 credentials and a local test agent on
+`127.0.0.1` ([docs/dev-snmpd.conf](docs/dev-snmpd.conf)). Never use production credentials
+or production switches in development.
+
+```bash
+.venv/bin/python -m netmon -c config.dev.yaml
+```
+
+## 2b. Production
+
+Install it on the internal production server only.
 
 1. **Configure the switches**: follow [docs/cisco-switch-config.md](docs/cisco-switch-config.md)
-   (SNMPv3 user, syslog, CDP, descriptions).
-2. **Write the config**:
+   (read-only SNMPv3 authPriv user, syslog, CDP, descriptions).
+2. **Store the SNMPv3 credentials** in the secrets database, and give NetMon a read-only
+   database account: [docs/secrets.md](docs/secrets.md). The DB driver is installed on the
+   server after security review.
+3. **Write the config** (no secrets in it, and NetMon refuses any):
    ```bash
-   cp config.example.yaml config.yaml      # then edit IPs / names / floors
+   cp config.example.yaml /opt/netmon/config.yaml      # IPs, names, floors, secrets DB host
    ```
-3. **Set the secrets** (never put keys in the YAML file):
-   ```bash
-   export NETMON_SNMP_AUTH='...' NETMON_SNMP_PRIV='...'
-   export NETMON_SMTP_PASSWORD='...' NETMON_TEAMS_WEBHOOK='https://...'
-   ```
-4. **Run it**:
-   ```bash
-   .venv/bin/python -m netmon -c config.yaml
-   ```
+4. **Start it as a service** (section 5). If any switch lacks a valid authPriv credential,
+   NetMon refuses to start and names the switch.
 5. In the dashboard, check that every switch is green and the uplinks appear on the map.
-   Then send a test message:
-   ```bash
-   curl -X POST http://localhost:8080/api/test-notify
-   ```
 
-## 3. Email and Teams
+## 3. Email and Teams (off by policy)
 
-**Teams**: in the channel, open **••• → Workflows → "Post to a channel when a webhook request is
-received"**, choose the team and channel, and copy the URL into `NETMON_TEAMS_WEBHOOK`. Set
-`teams.enabled: true`.
+These send monitoring data off the server, so they're **disabled** and NetMon refuses to
+start with them enabled unless `alerts.security_exception` names an approved exception.
+With an exception:
 
-**Email (Office 365)**: `smtp.office365.com`, port 587, STARTTLS, on a mailbox that has
-*Authenticated SMTP* enabled (your M365 admin may need to turn it on for that mailbox). Any
-internal SMTP relay also works: set `username: ""` if the relay needs no login.
+- **Email**: prefer an internal SMTP relay. The password is the `smtp_password` row in `netmon_secrets`.
+- **Teams**: create a channel Workflow webhook. The URL is the `teams_webhook` row in `netmon_secrets`.
+
+Test with `curl -X POST http://localhost:8080/api/test-notify`.
 
 ## 4. When does it alarm?
 
@@ -81,7 +88,8 @@ SNMP poll catches anything syslog missed.
 sudo useradd -r -s /usr/sbin/nologin netmon
 sudo mkdir -p /opt/netmon /etc/netmon && sudo cp -r . /opt/netmon && cd /opt/netmon
 sudo python3 -m venv .venv && sudo .venv/bin/pip install -r requirements.txt
-sudo cp deploy/netmon.env.example /etc/netmon/netmon.env && sudo chmod 600 /etc/netmon/netmon.env  # edit it
+# security team: install the reviewed DB driver into .venv and create
+# /etc/netmon/credentials/db-password (root, 0600). See docs/secrets.md
 sudo chown -R netmon: /opt/netmon
 sudo cp deploy/netmon.service /etc/systemd/system/ && sudo systemctl enable --now netmon
 journalctl -u netmon -f
@@ -94,8 +102,9 @@ so only expose port 8080 to the IT/management network.
 
 ```
 netmon/
-  config.py      loads config.yaml (+ ${ENV} secrets)
-  snmp.py        SNMPv3 poller: IF-MIB, Cisco VLAN/trunk MIBs, CDP
+  config.py      loads config.yaml (refuses any secret in it)
+  credentials.py runtime secrets: authPriv policy, mock (dev) + database (prod) providers
+  snmp.py        read-only SNMPv3 authPriv poller: IF-MIB, Cisco VLAN/trunk MIBs, CDP
   syslog.py      parses %LINK-3-UPDOWN / %LINEPROTO-5-UPDOWN for instant alarms
   monitor.py     state, topology learning, alarm rules
   notify.py      email + Teams (Adaptive Card)
@@ -105,7 +114,7 @@ netmon/
   static/        dashboard (HTML/CSS/JS, vis-network bundled for offline use)
 tests/           python -m pytest
 docs/            Cisco config guide, screenshots
-deploy/          systemd service, env file template
+deploy/          hardened systemd service (database password via LoadCredential)
 ```
 
 REST API: `GET /api/state`, `GET /api/devices/{name}`, `POST /api/devices/{name}/poll`,
