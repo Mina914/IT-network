@@ -1,0 +1,32 @@
+:root { --ink: #111827; --muted: #6b7280; --line: #e5e7eb; --bg: #ffffff; --soft: #f8fafc; --good: #15803d; --bad: #b91c1c; --warn: #b45309; --accent: #0e7490; color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
+.toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px max(16px, 4vw); border-bottom: 1px solid var(--line); background: var(--soft); position: sticky; top: 0; }
+.toolbar a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { background: #fff; border: 0; padding: 7px 12px; font: inherit; cursor: pointer; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.active { background: #e0f2fe; color: var(--ink); font-weight: 600; }
+button.primary { margin-left: auto; background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+main { max-width: 1050px; margin: 0 auto; padding: 24px max(16px, 4vw) 48px; }
+h1 { font-size: 24px; margin: 0; text-wrap: balance; }
+h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 32px 0 10px; }
+.period { color: var(--muted); margin: 4px 0 20px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.kpi { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.kpi .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+.kpi .v { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .5px; border-bottom: 2px solid var(--line); padding: 6px 8px; white-space: nowrap; }
+td { border-bottom: 1px solid var(--line); padding: 6px 8px; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.good { color: var(--good); } .bad { color: var(--bad); font-weight: 600; } .warn { color: var(--warn); }
+.muted { color: var(--muted); }
+.note { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+@media print {
+  .no-print { display: none !important; }
+  main { padding: 0; max-width: none; }
+  h2 { break-after: avoid; }
+  tr { break-inside: avoid; }
+}

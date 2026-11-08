@@ -76,11 +76,54 @@ class AlertsCfg:
     # Wait this long after a link goes down before sending email/Teams.
     notify_delay_seconds: int = 15
     send_recovery: bool = True
+    notify_warnings: bool = False      # also send email/Teams for warnings (CPU, utilisation, ...)
     # Email and Teams send monitoring data off this server. They stay OFF unless a
     # security exception has been approved; put its reference here.
     security_exception: str = ""
     email: EmailCfg = field(default_factory=EmailCfg)
     teams: TeamsCfg = field(default_factory=TeamsCfg)
+
+
+@dataclass
+class AuthCfg:
+    enabled: bool = True
+    session_hours: int = 12
+    secure_cookies: bool = False      # set true when the dashboard is served over HTTPS
+    max_failures: int = 5             # failed logins before a lock-out
+    lockout_minutes: int = 10
+
+
+@dataclass
+class Thresholds:
+    cpu_percent: float = 90
+    memory_percent: float = 90
+    utilization_percent: float = 80          # warning when an uplink/server port is busier than this
+    utilization_clear_percent: float = 70
+    errors_per_poll: int = 50                # new in+out errors between two polls
+    poe_budget_percent: float = 90
+
+
+@dataclass
+class InventoryCfg:
+    enabled: bool = True                     # MAC / ARP tables for "where is this device?"
+    interval_seconds: int = 300
+    new_device_events: bool = True
+
+
+@dataclass
+class HistoryCfg:
+    enabled: bool = True                     # traffic graphs
+    keep_5min_days: int = 7
+    keep_hourly_days: int = 90
+
+
+def _dc(cls, d: dict | None, name: str):
+    obj = cls()
+    for k, v in (d or {}).items():
+        if not hasattr(obj, k):
+            raise ValueError(f"unknown setting {name}.{k}")
+        setattr(obj, k, v)
+    return obj
 
 
 @dataclass
@@ -96,6 +139,11 @@ class Config:
     db_path: str = "netmon.db"
     allow_weak_crypto: bool = False      # permit MD5 / DES for very old switches
     secrets: dict = field(default_factory=dict)
+    auth: AuthCfg = field(default_factory=AuthCfg)
+    thresholds: Thresholds = field(default_factory=Thresholds)
+    inventory: InventoryCfg = field(default_factory=InventoryCfg)
+    history: HistoryCfg = field(default_factory=HistoryCfg)
+    patch_panels_csv: str = ""
     alerts: AlertsCfg = field(default_factory=AlertsCfg)
     devices: list[Device] = field(default_factory=list)
     dashboard_url: str = ""
@@ -126,6 +174,13 @@ def load_config(path: str | Path) -> Config:
     cfg.db_path = raw.get("db_path", cfg.db_path)
     cfg.allow_weak_crypto = bool(raw.get("allow_weak_crypto", False))
     cfg.secrets = dict(raw.get("secrets") or {})
+    cfg.auth = _dc(AuthCfg, raw.get("auth"), "auth")
+    cfg.thresholds = _dc(Thresholds, raw.get("thresholds"), "thresholds")
+    cfg.inventory = _dc(InventoryCfg, raw.get("inventory"), "inventory")
+    cfg.history = _dc(HistoryCfg, raw.get("history"), "history")
+    cfg.patch_panels_csv = raw.get("patch_panels_csv", "") or ""
+    if cfg.environment == "production" and not cfg.auth.enabled:
+        raise ValueError("auth.enabled must be true in production")
 
     polling = raw.get("polling", {})
     cfg.poll_interval = int(polling.get("interval_seconds", cfg.poll_interval))
@@ -141,6 +196,7 @@ def load_config(path: str | Path) -> Config:
         critical_description_regex=a.get("critical_description_regex", AlertsCfg.critical_description_regex),
         notify_delay_seconds=int(a.get("notify_delay_seconds", 15)),
         send_recovery=bool(a.get("send_recovery", True)),
+        notify_warnings=bool(a.get("notify_warnings", False)),
         security_exception=str(a.get("security_exception", "") or ""),
         email=EmailCfg(**{("sender" if k == "from" else k): v for k, v in (a.get("email") or {}).items()}),
         teams=TeamsCfg(**(a.get("teams") or {})),

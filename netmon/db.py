@@ -41,6 +41,43 @@ CREATE TABLE IF NOT EXISTS links (
     last_seen REAL NOT NULL,
     UNIQUE(a_device, a_port, b_device, b_port)
 );
+
+CREATE TABLE IF NOT EXISTS users (
+    username   TEXT PRIMARY KEY,
+    pw_hash    TEXT NOT NULL,
+    role       TEXT NOT NULL,          -- admin | viewer
+    created    REAL NOT NULL,
+    last_login REAL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,       -- sha256 of the cookie value; the token itself is never stored
+    username   TEXT NOT NULL,
+    expires    REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS traffic (
+    device  TEXT NOT NULL,
+    port    TEXT NOT NULL,
+    res     INTEGER NOT NULL,          -- 300 (5-minute) or 3600 (hourly)
+    ts      INTEGER NOT NULL,          -- start of the bucket (unix seconds)
+    in_avg  REAL, out_avg REAL, in_max REAL, out_max REAL,
+    PRIMARY KEY (device, port, res, ts)
+);
+CREATE INDEX IF NOT EXISTS traffic_res_ts ON traffic(res, ts);
+
+CREATE TABLE IF NOT EXISTS macs (
+    mac        TEXT PRIMARY KEY,       -- aa:bb:cc:dd:ee:ff
+    ip         TEXT,
+    device     TEXT,
+    port       TEXT,
+    vlan       INTEGER,
+    first_seen REAL NOT NULL,
+    last_seen  REAL NOT NULL,
+    is_new     INTEGER NOT NULL DEFAULT 0   -- 0 = learned during the first scan (baseline)
+);
+CREATE INDEX IF NOT EXISTS macs_ip ON macs(ip);
+CREATE INDEX IF NOT EXISTS macs_first ON macs(first_seen);
 """
 
 
@@ -62,6 +99,18 @@ class Database:
     def _query(self, sql, args=()):
         with self._lock:
             return [dict(r) for r in self._conn.execute(sql, args).fetchall()]
+
+    # public helpers for the feature modules (auth, history, inventory, reports)
+    def execute(self, sql, args=()):
+        return self._exec(sql, args)
+
+    def query(self, sql, args=()):
+        return self._query(sql, args)
+
+    def executemany(self, sql, rows):
+        with self._lock:
+            self._conn.executemany(sql, rows)
+            self._conn.commit()
 
     # ---- events ---------------------------------------------------------
     def add_event(self, severity, device, port, message, ts=None) -> dict:
@@ -110,6 +159,12 @@ class Database:
 
     def alarm_history(self, limit=200):
         return self._query("SELECT * FROM alarms ORDER BY id DESC LIMIT ?", (limit,))
+
+    def alarms_between(self, start, end):
+        """Alarms that were active at any moment in [start, end]."""
+        return self._query(
+            "SELECT * FROM alarms WHERE raised_ts <= ? AND (cleared_ts IS NULL OR cleared_ts >= ?) ORDER BY raised_ts",
+            (end, start))
 
     # ---- links ----------------------------------------------------------
     def upsert_link(self, a_dev, a_port, b_dev, b_port):

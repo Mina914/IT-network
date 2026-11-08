@@ -15,6 +15,13 @@ db_path: netmon-dev.db
 secrets:
   provider: mock
 
+# Login is on in development too; create a test user with:
+#   python -m netmon -c config.dev.yaml user add <name> --role admin
+auth:
+  enabled: true
+
+patch_panels_csv: patch-panels.example.csv
+
 polling:
   interval_seconds: 15
   fail_threshold: 3

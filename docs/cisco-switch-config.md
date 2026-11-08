@@ -21,6 +21,8 @@ ip access-list standard NETMON-SNMP
 snmp-server view NETMON-VIEW iso included
 snmp-server group NETMON-GRP v3 priv read NETMON-VIEW access NETMON-SNMP
 snmp-server user netmon NETMON-GRP v3 auth sha AUTH-KEY priv aes 128 PRIV-KEY access NETMON-SNMP
+! MAC address tables per VLAN ("Find device"): Cisco serves them in contexts vlan-10, vlan-20, ...
+snmp-server group NETMON-GRP v3 priv context vlan- match prefix read NETMON-VIEW access NETMON-SNMP
 !
 ! keep interface numbering stable across reboots (older IOS; IOS-XE does this by default)
 snmp-server ifindex persist
@@ -38,6 +40,11 @@ secrets database.
 The production keys are entered on the switches and in the secrets database by the
 people authorised to handle them. Don't paste them into chat, tickets, scripts or this
 repository.
+
+What NetMon reads (all read-only): IF-MIB (ports, traffic, errors), CISCO-VLAN-MEMBERSHIP and
+VTP (VLANs, trunks), CISCO-CDP (topology), BRIDGE-MIB + ARP (find device), CISCO-PROCESS
+(CPU, memory), CISCO-ENVMON (temperature, fans, power), POWER-ETHERNET + CISCO-POWER-ETHERNET-EXT
+(PoE), CISCO-NTP and SNMPv2-MIB (compliance).
 
 ## 2. Syslog for instant alarms
 

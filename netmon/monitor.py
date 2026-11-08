@@ -63,6 +63,9 @@ class Port:
     out_bps: float = 0.0
     last_change: float | None = None
     neighbor: dict | None = None     # {"device", "port", "platform"} from CDP
+    util: float | None = None        # % of link speed (max of in/out)
+    poe_w: float | None = None       # PoE watts delivered on this port
+    patch: dict | None = None        # {"panel", "panel_port", "location"} from the patch panel CSV
 
 
 @dataclass
@@ -76,6 +79,9 @@ class DeviceState:
     sysdescr: str = ""
     uptime: int = 0                  # seconds
     ports: dict[int, Port] = field(default_factory=dict)
+    health: dict = field(default_factory=dict)   # cpu, mem_pct, temps, fans, psus
+    poe: dict | None = None                      # {"budget_w", "used_w"}
+    info: dict = field(default_factory=dict)     # contact, location, ntp
 
     def port_by_name(self, name: str) -> Port | None:
         name = short_ifname(name)
@@ -101,6 +107,10 @@ class Monitor:
             if cfg.alerts.critical_description_regex else None
         self.poll_request = lambda name: None      # set by the scheduler
         self._tasks: set[asyncio.Task] = set()
+        self.history = None                        # history.History
+        self.panels = None                         # patchpanels.PatchPanels
+        self._over: dict[str, int] = {}            # consecutive polls above a threshold
+        self._clean: dict[str, int] = {}           # consecutive clean polls (errors)
 
     def add_device(self, dev: Device):
         self.devices[dev.name] = DeviceState(cfg=dev)
@@ -199,7 +209,15 @@ class Monitor:
         return False
 
     def _port_label(self, p: Port) -> str:
-        return f"{p.name} ({p.alias})" if p.alias else p.name
+        label = f"{p.name} ({p.alias})" if p.alias else p.name
+        if p.patch:
+            label += f" @ {p.patch['panel']}/{p.patch['panel_port']}"
+            if p.patch.get("location"):
+                label += f" {p.patch['location']}"
+        return label
+
+    def port_label(self, dev, p: Port) -> str:
+        return f"{dev.cfg.name} {self._port_label(p)}"
 
     def _port_changed(self, dev: DeviceState, p: Port, old_oper: str, old_admin: str, source: str):
         name, key = dev.cfg.name, f"{dev.cfg.name}|{p.name}"
@@ -228,7 +246,8 @@ class Monitor:
         alarm = self.db.raise_alarm(key, device, port, severity, message)
         self.active[key] = alarm
         self._publish({"type": "alarm_raised", "data": alarm})
-        self._spawn(self._notify_later(alarm))
+        if severity == "critical" or self.cfg.alerts.notify_warnings:
+            self._spawn(self._notify_later(alarm))
 
     def _clear(self, key, message):
         alarm = self.active.pop(key, None)
@@ -265,6 +284,10 @@ class Monitor:
                         ctx["Description"] = p.alias
                     if p.neighbor:
                         ctx["Neighbor"] = f"{p.neighbor.get('device')} {p.neighbor.get('port')}"
+                    if p.patch:
+                        ctx["Patch panel"] = f"{p.patch['panel']} port {p.patch['panel_port']}"
+                        if p.patch.get("location"):
+                            ctx["Location"] = p.patch["location"]
         ctx["Raised"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(alarm["raised_ts"]))
         if alarm.get("cleared_ts"):
             ctx["Cleared"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(alarm["cleared_ts"]))
@@ -294,6 +317,13 @@ class Monitor:
         dev.sysname = snap.get("sysname", dev.sysname)
         dev.sysdescr = snap.get("sysdescr", dev.sysdescr)
         dev.uptime = snap.get("uptime", dev.uptime)
+        if "health" in snap:
+            dev.health = snap["health"] or {}
+        if "poe" in snap:
+            dev.poe = snap["poe"]
+        if "info" in snap:
+            dev.info = snap["info"] or {}
+        poe_ports = (snap.get("poe") or {}).get("ports", {})
 
         old_ports = dev.ports
         new_ports: dict[int, Port] = {}
@@ -313,11 +343,22 @@ class Monitor:
                 if old.oper != p.oper or old.admin != p.admin:
                     p.last_change = now
                     changes.append((p, old.oper, old.admin))
+                if old.vlan is not None and p.vlan is not None and old.vlan != p.vlan and not p.trunk:
+                    self._event("warning", name, p.name, f"VLAN changed {old.vlan} → {p.vlan} on {self._port_label(p)}")
+            if p.speed and _is_up(p.oper):
+                p.util = round(100 * max(p.in_bps, p.out_bps) / (p.speed * 1e6), 1)
+            p.poe_w = poe_ports.get(p.name)
+            if self.panels:
+                p.patch = self.panels.lookup(name, p.name)
+            if self.history is not None and old is not None and dt > 0:
+                self.history.add(name, p.name, p.in_bps, p.out_bps, now)
             new_ports[p.ifindex] = p
         dev.ports = new_ports
         dev.last_poll = now
 
         self._learn_links(dev)
+        self._check_health(dev)
+        self._check_ports(dev, old_ports)
 
         if was_down:
             self._event("recovery", name, None, "Device is reachable again")
@@ -336,11 +377,92 @@ class Monitor:
                     self._event("critical", name, p.name, f"LINK DOWN {self._port_label(p)} (found at start-up)")
             # and clear stale alarms from a previous run that are fine now
             for key, alarm in list(self.active.items()):
-                if alarm["device"] == name and alarm["port"]:
+                if alarm["device"] == name and alarm["port"] and key == f"{name}|{alarm['port']}":
                     p = dev.port_by_name(alarm["port"])
                     if p is None or _is_up(p.oper) or p.admin != "up":
                         self._clear(key, "resolved while monitor was offline")
         self._publish_device(dev)
+
+    # ------------------------------------------------------------------ health & port checks
+    def _threshold(self, key, device, port, over: bool, clear: bool, message: str, polls=2):
+        """Raise a warning after `polls` consecutive polls over the limit; clear when `clear`."""
+        if over:
+            self._over[key] = self._over.get(key, 0) + 1
+            if self._over[key] >= polls and key not in self.active:
+                self._event("warning", device, port, message)
+                self._raise(key, device, port, "warning", message)
+        else:
+            self._over.pop(key, None)
+            if clear and key in self.active:
+                self._event("recovery", device, port, f"OK again: {self.active[key]['message']}")
+                self._clear(key, "back to normal")
+
+    def _check_health(self, dev: DeviceState):
+        t, h, name = self.cfg.thresholds, dev.health or {}, dev.cfg.name
+        cpu = h.get("cpu")
+        if cpu is not None:
+            self._threshold(f"{name}|#cpu", name, None, cpu >= t.cpu_percent, cpu < t.cpu_percent - 10,
+                            f"High CPU on {name}: {cpu:.0f}%")
+        mem = h.get("mem_pct")
+        if mem is not None:
+            self._threshold(f"{name}|#mem", name, None, mem >= t.memory_percent, mem < t.memory_percent - 5,
+                            f"High memory use on {name}: {mem:.0f}%")
+        # environment: Cisco states 1 normal, 2 warning, 3 critical, 4 shutdown, 5 notPresent, 6 notFunctioning
+        seen = set()
+        for kind, items in (("temp", h.get("temps", [])), ("fan", h.get("fans", [])), ("psu", h.get("psus", []))):
+            for it in items:
+                key = f"{name}|#{kind}:{it['name']}"
+                seen.add(key)
+                state = it.get("state", 1)
+                bad = state in (2, 3, 4, 6)
+                sev = "warning" if state == 2 else "critical"
+                what = {"temp": "Temperature", "fan": "Fan", "psu": "Power supply"}[kind]
+                val = f" {it['value']}°C" if kind == "temp" and it.get("value") is not None else ""
+                text = {2: "WARNING", 3: "CRITICAL", 4: "SHUTDOWN", 6: "NOT WORKING"}.get(state, "")
+                if bad and key not in self.active:
+                    msg = f"{what} {text} on {name}: {it['name']}{val}"
+                    self._event(sev, name, None, msg)
+                    self._raise(key, name, None, sev, msg)
+                elif not bad and key in self.active:
+                    self._event("recovery", name, None, f"{what} OK on {name}: {it['name']}")
+                    self._clear(key, "normal")
+        for key in [k for k in self.active if k.startswith(f"{name}|#") and k.split("|#")[1].split(":")[0] in
+                    ("temp", "fan", "psu") and k not in seen and h]:
+            self._clear(key, "sensor gone")
+        if dev.poe and dev.poe.get("budget_w"):
+            pct = 100 * dev.poe.get("used_w", 0) / dev.poe["budget_w"]
+            self._threshold(f"{name}|#poe", name, None, pct >= t.poe_budget_percent, pct < t.poe_budget_percent - 5,
+                            f"PoE budget almost used on {name}: {dev.poe.get('used_w', 0):.0f} of "
+                            f"{dev.poe['budget_w']:.0f} W ({pct:.0f}%)", polls=1)
+
+    def _check_ports(self, dev: DeviceState, old_ports: dict):
+        t, name = self.cfg.thresholds, dev.cfg.name
+        link_ports = self._link_ports()
+        for p in dev.ports.values():
+            watch = self._is_critical(dev, p, link_ports)
+            if watch and p.util is not None:
+                self._threshold(f"{name}|{p.name}|util", name, p.name, p.util >= t.utilization_percent,
+                                p.util < t.utilization_clear_percent,
+                                f"High utilisation on {name} {self._port_label(p)}: {p.util:.0f}% of {p.speed // 1000 if p.speed >= 1000 else p.speed}{'G' if p.speed >= 1000 else 'M'}")
+            elif f"{name}|{p.name}|util" in self.active and not _is_up(p.oper):
+                self._clear(f"{name}|{p.name}|util", "link down")
+            old = old_ports.get(p.ifindex)
+            if old is None:
+                continue
+            delta = (p.in_errors - old.in_errors) + (p.out_errors - old.out_errors)
+            key = f"{name}|{p.name}|err"
+            if delta >= t.errors_per_poll:
+                self._clean.pop(key, None)
+                if key not in self.active:
+                    msg = f"Errors increasing on {name} {self._port_label(p)}: +{delta} since last poll (cable/SFP?)"
+                    self._event("warning", name, p.name, msg)
+                    self._raise(key, name, p.name, "warning", msg)
+            elif key in self.active:
+                self._clean[key] = self._clean.get(key, 0) + 1
+                if self._clean[key] >= 10:
+                    self._clean.pop(key)
+                    self._event("recovery", name, p.name, f"No new errors on {name} {p.name}")
+                    self._clear(key, "errors stopped")
 
     def apply_poll_failure(self, name: str, error: str):
         dev = self.devices[name]
@@ -412,6 +534,9 @@ class Monitor:
             "uptime": dev.uptime,
             "ports_up": sum(1 for p in ports if _is_up(p.oper)),
             "ports_total": len(ports),
+            "health": dev.health,
+            "poe": dev.poe,
+            "info": dev.info,
             "ports": [asdict(p) for p in ports],
         }
 
@@ -421,6 +546,8 @@ class Monitor:
             "links": self.links(),
             "alarms": sorted(self.active.values(), key=lambda a: -a["raised_ts"]),
             "events": self.db.recent_events(150),
+            "panels": self.panels.to_list() if self.panels else [],
+            "thresholds": vars(self.cfg.thresholds),
             "demo": self.cfg.demo,
         }
 

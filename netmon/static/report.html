@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NetMon · Availability report</title>
+<link rel="stylesheet" href="/static/report.css">
+</head>
+<body>
+<div class="toolbar no-print">
+  <a href="/">← Dashboard</a>
+  <div class="seg" id="seg">
+    <button data-r="day">Last 24 hours</button><button data-r="week" class="active">Last 7 days</button><button data-r="month">Last 30 days</button>
+  </div>
+  <button id="print" class="primary">Print / Save as PDF</button>
+</div>
+<main id="out"><p class="muted">Loading…</p></main>
+<script src="/static/report.js"></script>
+</body>
+</html>

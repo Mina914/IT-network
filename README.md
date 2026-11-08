@@ -11,6 +11,24 @@ A small, self-hosted monitoring system for Cisco switches:
 - **No data leaves the server by default**: email and Teams exist but are off unless a security exception is approved.
 - Event log, alarm acknowledgement ("acknowledged by Mina"), and alarms saved across restarts.
 
+**Also included:**
+
+| Feature | What it gives you |
+|---|---|
+| **Login** | Users with `admin` (acknowledge, poll) or `viewer` (read only) roles. scrypt password hashes, lock-out after failed logins, HttpOnly/SameSite cookies, CSP. Manage users with `python -m netmon -c config.yaml user add/list/passwd/role/del`. |
+| **Find device** | Type an IP, a MAC in any format, a room, or a description, and get the switch, port, VLAN and patch-panel location. Alerts on **new devices** and **devices that moved**. |
+| **Switch health** | CPU, memory, temperature, fans, power supplies and PoE budget, with warnings and alarms. |
+| **Utilisation & errors** | A warning when an uplink or server port runs above 80%, or when a port's error counters climb (bad cable or SFP). |
+| **Traffic graphs** | Click any port for its day / week / month graph (5-minute averages for 7 days, hourly for 90). |
+| **PoE** | Watts per port (⚡ on the front panel) and per switch budget. |
+| **Patch panels** | Load a CSV (keep it in Excel). Each port shows `PP-F1-A/12 · Room 112`, panels appear on the map, and alarms tell you the room. |
+| **Reports** | `/report`: outages, downtime and availability per uplink and switch, the busiest ports and the error ports, for a day, week or month. Prints or saves as PDF. |
+| **Compliance** | Best-practice checks per switch: NTP, location and contact, unused ports shut down, descriptions, VLAN 1, errors, software version, uptime. |
+| **Mobile page** | `/m`: alarms and switch status, sized for a phone. |
+| **VLAN changes** | An event when an access port's VLAN changes. |
+
+Config backup over SSH is **not included**. It needs write-level access and a new dependency, so it waits for security approval.
+
 ![Dashboard](docs/img/dashboard.png)
 ![Switch port view](docs/img/switch-ports.png)
 

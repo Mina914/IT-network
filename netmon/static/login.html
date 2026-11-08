@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NetMon · Sign in</title>
+<link rel="stylesheet" href="/static/login.css">
+</head>
+<body>
+<main class="box">
+  <div class="brand"><span class="logo">◉</span> NetMon</div>
+  <p class="sub">Building network monitor</p>
+  <form id="f" autocomplete="on">
+    <label for="u">Username</label>
+    <input id="u" name="username" autocomplete="username" required autofocus>
+    <label for="p">Password</label>
+    <input id="p" name="password" type="password" autocomplete="current-password" required>
+    <button type="submit" id="go">Sign in</button>
+    <p id="msg" class="msg" role="alert" hidden></p>
+  </form>
+  <div id="nousers" class="hint" hidden>
+    <b>No users yet.</b> On the NetMon server run:
+    <code>python -m netmon -c config.yaml user add &lt;name&gt; --role admin</code>
+  </div>
+</main>
+<script src="/static/login.js"></script>
+</body>
+</html>

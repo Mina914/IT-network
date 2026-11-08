@@ -39,6 +39,39 @@ secrets:
   # allowed_hosts: [secrets-db.corp.local]
   # snmp_query / secrets_query: override the default SELECTs (see docs/secrets.md)
 
+# Dashboard login (required in production). Create users on the server with:
+#   python -m netmon -c config.yaml user add <name> --role admin|viewer
+auth:
+  enabled: true
+  session_hours: 12
+  secure_cookies: false        # true when the dashboard is behind HTTPS
+  max_failures: 5              # failed logins before a 10-minute lock-out
+  lockout_minutes: 10
+
+# Warnings (orange alarms). Link-down and device-down are always critical.
+thresholds:
+  cpu_percent: 90
+  memory_percent: 90
+  utilization_percent: 80      # uplinks/servers busier than this for 2 polls
+  utilization_clear_percent: 70
+  errors_per_poll: 50          # new errors between two polls (cable / SFP problems)
+  poe_budget_percent: 90
+
+# "Where is this device?": MAC + ARP tables, new-device and moved-device events
+inventory:
+  enabled: true
+  interval_seconds: 300
+  new_device_events: true
+
+# Traffic graphs per port
+history:
+  enabled: true
+  keep_5min_days: 7
+  keep_hourly_days: 90
+
+# Patch panels (keep it in Excel, save as "CSV UTF-8"); see patch-panels.example.csv
+patch_panels_csv: /opt/netmon/patch-panels.csv
+
 # SNMPv3 is always authPriv (authentication + encryption) and read-only.
 # Allowed: auth SHA / SHA-2, privacy AES. MD5 and DES are refused unless:
 allow_weak_crypto: false
@@ -56,6 +89,7 @@ alerts:
   critical_description_regex: "(?i)uplink|trunk|core|server|ap-|wlc|firewall|fw"
   notify_delay_seconds: 15   # link must stay down this long before email/Teams is sent
   send_recovery: true
+  notify_warnings: false     # also email/Teams for warnings (CPU, utilisation, ...)
 
   # Email and Teams send monitoring data off this server, so they are OFF by policy.
   # To enable either, an approved security exception is required:

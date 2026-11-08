@@ -31,21 +31,38 @@
   </div>
 </header>
 
+<nav class="views" aria-label="Views">
+  <div class="view-tabs" role="tablist">
+    <button class="vtab active" data-view="overview">Overview</button>
+    <button class="vtab" data-view="finder">Find device</button>
+    <button class="vtab" data-view="health">Health</button>
+    <button class="vtab" data-view="compliance">Compliance</button>
+    <a class="vtab" href="/report" target="_blank" rel="noopener">Reports ↗</a>
+    <a class="vtab" href="/m" target="_blank" rel="noopener">Mobile ↗</a>
+  </div>
+  <div class="user-box">
+    <span id="userName" class="user-chip"></span>
+    <button id="logoutBtn" class="btn small ghost" hidden>Log out</button>
+  </div>
+</nav>
+
 <div id="banner" class="banner" hidden>
   <span class="pulse"></span>
   <span id="bannerText"></span>
-  <button class="btn small light" id="bannerAck">Acknowledge</button>
+  <button class="btn small light admin-only" id="bannerAck">Acknowledge</button>
 </div>
 
-<main class="layout">
+<!-- ============================================================ OVERVIEW -->
+<main class="layout view" id="view-overview">
   <section class="card topo-card">
     <div class="card-head">
       <h2>Topology</h2>
       <div class="legend">
         <span><i class="lg up"></i>Up</span>
-        <span><i class="lg warn"></i>Port alarm</span>
+        <span><i class="lg warn"></i>Alarm</span>
         <span><i class="lg down"></i>Down</span>
         <span><i class="lg unk"></i>Unknown</span>
+        <label class="chk"><input type="checkbox" id="showPanels"> Patch panels</label>
         <button class="btn small ghost" id="fitBtn">Fit</button>
       </div>
     </div>
@@ -75,6 +92,41 @@
   </section>
 </main>
 
+<!-- ============================================================ FINDER -->
+<main class="page view" id="view-finder" hidden>
+  <section class="card">
+    <div class="card-head"><h2>Where is this device?</h2><span class="muted small" id="finderCount"></span></div>
+    <form class="finder-form" id="finderForm">
+      <input id="finderQ" class="input big" autocomplete="off"
+             placeholder="IP address, MAC address (any format), room, or description — e.g. 10.10.3.45, 00:1b:44:11:3a:b7, Room 305">
+      <button class="btn primary" type="submit">Search</button>
+    </form>
+    <div class="table-wrap pad"><table class="grid" id="finderTable"></table></div>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>New devices <span class="muted small">(last 24 hours)</span></h2></div>
+    <div class="table-wrap pad"><table class="grid" id="newTable"></table></div>
+  </section>
+</main>
+
+<!-- ============================================================ HEALTH -->
+<main class="page view" id="view-health" hidden>
+  <section class="card">
+    <div class="card-head"><h2>Switch health</h2><span class="muted small" id="healthNote"></span></div>
+    <div class="table-wrap pad"><table class="grid" id="healthTable"></table></div>
+  </section>
+</main>
+
+<!-- ============================================================ COMPLIANCE -->
+<main class="page view" id="view-compliance" hidden>
+  <section class="card">
+    <div class="card-head"><h2>Compliance</h2>
+      <span class="muted small">Best-practice checks using read-only SNMP. Click a switch for details.</span></div>
+    <div class="table-wrap pad"><table class="grid" id="compTable"></table></div>
+  </section>
+</main>
+
+<!-- ============================================================ DRAWER -->
 <div id="drawer" class="drawer" hidden>
   <div class="drawer-bg" data-close></div>
   <div class="drawer-panel" role="dialog" aria-modal="true">
@@ -84,13 +136,22 @@
         <div class="dh-sub" id="dSub"></div>
       </div>
       <div class="dh-actions">
-        <button class="btn small ghost" id="dPoll">↻ Poll now</button>
+        <button class="btn small ghost admin-only" id="dPoll">↻ Poll now</button>
         <button class="btn small ghost" data-close>✕</button>
       </div>
     </div>
     <div class="dinfo" id="dInfo"></div>
     <div class="faceplate-wrap"><div id="dFace" class="faceplate"></div></div>
-    <div class="ptools">
+    <div id="chartBox" class="chart-box" hidden>
+      <div class="chart-head">
+        <div><b id="chartTitle"></b> <span class="muted small" id="chartSub"></span></div>
+        <div class="seg" id="chartSeg">
+          <button data-r="day" class="active">Day</button><button data-r="week">Week</button><button data-r="month">Month</button>
+        </div>
+      </div>
+      <div id="chart" class="chart"></div>
+    </div>
+    <div class="ptools" id="pTools">
       <input id="pFilter" class="input inline" placeholder="Filter ports…">
       <div class="seg" id="pSeg">
         <button data-f="all" class="active">All</button>
@@ -99,14 +160,11 @@
         <button data-f="admin">Shutdown</button>
         <button data-f="uplink">Uplinks</button>
       </div>
+      <span class="muted small">Click a port for its traffic graph</span>
     </div>
     <div class="table-wrap">
       <table class="ports">
-        <thead><tr>
-          <th>Port</th><th>Description</th><th>Status</th><th>VLAN</th><th>Speed</th>
-          <th class="num">In</th><th class="num">Out</th><th class="num">Errors</th>
-          <th>Neighbor (CDP)</th><th>Last change</th>
-        </tr></thead>
+        <thead id="pHead"></thead>
         <tbody id="pBody"></tbody>
       </table>
     </div>
